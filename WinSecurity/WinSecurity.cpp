@@ -5,6 +5,8 @@
 #include <psapi.h>
 
 #define CONSOLE
+#define PROCESS_CNT 512
+
 
 #ifdef CONSOLE
   #define PRINT_STR_CONSOLE(x) printf(x" line: %d, err: %lu\n", __LINE__, GetLastError())
@@ -12,8 +14,35 @@
   #define PRINT_STR_CONSOLE(x)
 #endif
 
+
 BOOL ListProcessModules(DWORD dwPID);
 BOOL GetProcessList();
+INT Is_64(DWORD PID);
+
+
+INT Is_64(DWORD PID)
+{
+  HANDLE hProcess;
+  BOOL bIs64;
+  hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, PID);
+  if ( hProcess == INVALID_HANDLE_VALUE )
+  {
+    return -1;
+  }
+  if ( IsWow64Process(hProcess, &bIs64) )
+  {
+    if ( !bIs64 )
+    {
+      return 1;
+    }
+    else
+    {
+      return 0;
+    }
+  }
+  return -1;
+}
+
 
 BOOL GetProcessList()
 {
@@ -23,10 +52,10 @@ BOOL GetProcessList()
   PROCESSENTRY32 pe32;
   DWORD dwPriorityClass;
   DWORD dwPathLen;
+  DWORD dwCopiedBufLen;
   WCHAR wstrExePath[MAX_PATH];
 
   pe32.dwSize = sizeof(PROCESSENTRY32);
-  //pwstrExePath = (LPWSTR)malloc(sizeof(CHAR)*1024);
 
   /*
     Сделать снимок текущих процессов
@@ -58,50 +87,66 @@ BOOL GetProcessList()
     hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ProcessID);
     if (hProcess == INVALID_HANDLE_VALUE)
     {
-      //PRINT_STR_CONSOLE("OpenProcess");
       printf(" invalid ");
     }
-    else
-    {
-      dwPriorityClass = GetPriorityClass(hProcess);
-      if (!dwPriorityClass)
-      {
-        //PRINT_STR_CONSOLE("GetPriorityClass");
-      }
-    }
     
-    // id и название
+    // PID И НАЗАВАНИЕ
     _tprintf(TEXT("\n%ld %s "), pe32.th32ProcessID, pe32.szExeFile);
-    if (QueryFullProcessImageNameW(hProcess, PROCESS_NAME_NATIVE, (LPWSTR)wstrExePath, &dwPathLen))
+
+    // ПУТЬ  К ФАЙЛУ
+    dwCopiedBufLen = GetModuleFileNameExW(hProcess, NULL, wstrExePath, dwPathLen);
+    if (dwCopiedBufLen > 0)
     {
       wprintf(L"%s ", wstrExePath);
     }
     else
     {
-      wprintf(L"pizda ");
+      wprintf(L"N/a");
     }
 
+    //PID РОДИТЕЛЯ
+    wprintf(L" %d", pe32.th32ParentProcessID);
+
+    //ИМЯ РОДИТЕЛЯ
     hParentProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ParentProcessID);
-    // родитель и его пид
     if (hParentProcess == INVALID_HANDLE_VALUE)
     {
-      wprintf(L" %d none \n", pe32.th32ParentProcessID);
+      wprintf(L" N/a\n");
     }
     else
     {
       HMODULE hMod;
-      DWORD cbNeeded;
+      DWORD dwLen;
+      DWORD dwRes;
       CHAR szProcessName[MAX_PATH];
-
-      if (EnumProcessModules(hParentProcess, &hMod, sizeof(hMod), &cbNeeded))
+      dwRes = GetProcessImageFileNameA(hParentProcess, szProcessName, MAX_PATH);
+      if (dwRes > 0)
       {
-        GetModuleBaseNameA(hParentProcess, hMod, szProcessName, MAX_PATH);
-        printf(" %d %s \n", pe32.th32ParentProcessID, szProcessName);
+        printf(" %s \n",szProcessName);
       }
-      
+      else
+      {
+        printf(" N/a\n");
+      }
     }
-    /// МОДУЛИ
+
+    // МОДУЛИ
     ListProcessModules(pe32.th32ProcessID);
+
+    // ТИП (РАЗРЯДНОСТЬ)
+    switch ( Is_64 ( pe32.th32ProcessID ) )
+    {
+    case 1:
+      wprintf(L"type x64\n");
+      break;
+    case 0:
+      wprintf(L"type x86\n");
+      break;
+    case -1:
+      wprintf(L"N/a\n");
+      break;
+    }
+
     CloseHandle(hProcess);
 
   } while (Process32Next(hProcessSnap, &pe32));
@@ -109,6 +154,9 @@ BOOL GetProcessList()
   CloseHandle(hProcessSnap);
   return(TRUE);
 }
+
+
+
 
 
 BOOL ListProcessModules(DWORD dwPID)
@@ -151,11 +199,7 @@ BOOL ListProcessModules(DWORD dwPID)
 
 int main()
 {
-  int p = 0;
-  int i = 99;
-  i += i += p += i;
   setlocale(LC_ALL, "Rus");
-  PRINT_STR_CONSOLE("hello");
   GetProcessList();
 }
 
