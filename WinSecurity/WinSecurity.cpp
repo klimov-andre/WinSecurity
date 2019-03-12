@@ -4,6 +4,7 @@
 #include <iostream>
 #include <psapi.h>
 
+
 #define CONSOLE
 #define PROCESS_CNT 512
 
@@ -18,29 +19,37 @@
 BOOL ListProcessModules(DWORD dwPID);
 BOOL GetProcessList();
 INT Is_64(DWORD PID);
+VOID GetMitigationInfo(DWORD PID, BOOL* policyDep, BOOL* policyAslr);
 
 
 INT Is_64(DWORD PID)
 {
   HANDLE hProcess;
   BOOL bIs64;
+  INT res;
   hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, PID);
   if ( hProcess == INVALID_HANDLE_VALUE )
   {
     return -1;
   }
+
   if ( IsWow64Process(hProcess, &bIs64) )
   {
     if ( !bIs64 )
     {
-      return 1;
+      res = 1;
     }
     else
     {
-      return 0;
+      res = 0;
     }
   }
-  return -1;
+  else
+  {
+    res = -1;
+  }
+  CloseHandle(hProcess);
+  return res;
 }
 
 
@@ -93,59 +102,83 @@ BOOL GetProcessList()
     // PID И НАЗАВАНИЕ
     _tprintf(TEXT("\n%ld %s "), pe32.th32ProcessID, pe32.szExeFile);
 
-    // ПУТЬ  К ФАЙЛУ
-    dwCopiedBufLen = GetModuleFileNameExW(hProcess, NULL, wstrExePath, dwPathLen);
-    if (dwCopiedBufLen > 0)
+    //// ПУТЬ  К ФАЙЛУ
+    //dwCopiedBufLen = GetModuleFileNameExW(hProcess, NULL, wstrExePath, dwPathLen);
+    //if (dwCopiedBufLen > 0)
+    //{
+    //  wprintf(L"%s ", wstrExePath);
+    //}
+    //else
+    //{
+    //  wprintf(L"N/a");
+    //}
+
+    ////PID РОДИТЕЛЯ
+    //wprintf(L" %d", pe32.th32ParentProcessID);
+
+    ////ИМЯ РОДИТЕЛЯ
+    //hParentProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ParentProcessID);
+    //if (hParentProcess == INVALID_HANDLE_VALUE)
+    //{
+    //  wprintf(L" N/a\n");
+    //}
+    //else
+    //{
+    //  HMODULE hMod;
+    //  DWORD dwLen;
+    //  DWORD dwRes;
+    //  CHAR szProcessName[MAX_PATH];
+    //  dwRes = GetProcessImageFileNameA(hParentProcess, szProcessName, MAX_PATH);
+    //  if (dwRes > 0)
+    //  {
+    //    printf(" %s \n",szProcessName);
+    //  }
+    //  else
+    //  {
+    //    printf(" N/a\n");
+    //  }
+    //}
+
+    //// МОДУЛИ
+    //ListProcessModules(pe32.th32ProcessID);
+
+
+    //// ТИП (РАЗРЯДНОСТЬ)
+    //switch ( Is_64 ( pe32.th32ProcessID ) )
+    //{
+    //case 1:
+    //  wprintf(L"type x64\n");
+    //  break;
+    //case 0:
+    //  wprintf(L"type x86\n");
+    //  break;
+    //case -1:
+    //  wprintf(L"N/a\n");
+    //  break;
+    //}
+
+
+    //ASLR & DEP
+    BOOL bDep;
+    BOOL bAslr;
+    GetMitigationInfo(pe32.th32ProcessID, &bDep, &bAslr);
+    if (bDep)
     {
-      wprintf(L"%s ", wstrExePath);
+      wprintf(L"\nDEP enabled");
     }
     else
     {
-      wprintf(L"N/a");
+      wprintf(L"\nDEP disabled");
     }
-
-    //PID РОДИТЕЛЯ
-    wprintf(L" %d", pe32.th32ParentProcessID);
-
-    //ИМЯ РОДИТЕЛЯ
-    hParentProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ParentProcessID);
-    if (hParentProcess == INVALID_HANDLE_VALUE)
+    if (bAslr)
     {
-      wprintf(L" N/a\n");
+      wprintf(L"\nASLR enabled\n");
     }
     else
     {
-      HMODULE hMod;
-      DWORD dwLen;
-      DWORD dwRes;
-      CHAR szProcessName[MAX_PATH];
-      dwRes = GetProcessImageFileNameA(hParentProcess, szProcessName, MAX_PATH);
-      if (dwRes > 0)
-      {
-        printf(" %s \n",szProcessName);
-      }
-      else
-      {
-        printf(" N/a\n");
-      }
+      wprintf(L"\nASLR disabled\n");
     }
 
-    // МОДУЛИ
-    ListProcessModules(pe32.th32ProcessID);
-
-    // ТИП (РАЗРЯДНОСТЬ)
-    switch ( Is_64 ( pe32.th32ProcessID ) )
-    {
-    case 1:
-      wprintf(L"type x64\n");
-      break;
-    case 0:
-      wprintf(L"type x86\n");
-      break;
-    case -1:
-      wprintf(L"N/a\n");
-      break;
-    }
 
     CloseHandle(hProcess);
 
@@ -156,16 +189,13 @@ BOOL GetProcessList()
 }
 
 
-
-
-
-BOOL ListProcessModules(DWORD dwPID)
+BOOL ListProcessModules(DWORD PID)
 {
   HANDLE hModuleSnap = INVALID_HANDLE_VALUE;
   MODULEENTRY32 me32;
   wprintf(L"MODULI: ");
   // Take a snapshot of all modules in the specified process.
-  hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dwPID);
+  hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, PID);
   if (hModuleSnap == INVALID_HANDLE_VALUE)
   {
     PRINT_STR_CONSOLE("CreateToolhelp32Snapshot");
@@ -194,6 +224,24 @@ BOOL ListProcessModules(DWORD dwPID)
   wprintf(L"\n ");
   CloseHandle(hModuleSnap);
   return(TRUE);
+}
+
+
+VOID GetMitigationInfo(DWORD PID, BOOL* bDep, BOOL* bAslr)
+{
+  HANDLE hProcess;
+  PROCESS_MITIGATION_DEP_POLICY policyDep = { 0 };
+  PROCESS_MITIGATION_ASLR_POLICY policyAslr = { 0 };
+  hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, PID);
+  if (hProcess == INVALID_HANDLE_VALUE)
+  {
+    return;
+  }
+
+  *bDep = GetProcessMitigationPolicy(hProcess, ProcessDEPPolicy, &policyDep, sizeof(policyDep));
+  *bAslr = GetProcessMitigationPolicy(hProcess, ProcessASLRPolicy, &policyAslr, sizeof(policyAslr));
+  CloseHandle(hProcess);
+  return;
 }
 
 
