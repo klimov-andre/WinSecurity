@@ -1,9 +1,14 @@
-﻿#include <windows.h>
+﻿#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "netapi32.lib")
+#pragma comment(lib, "advapi32.lib")
+
+#include <windows.h>
 #include <tlhelp32.h>
 #include <tchar.h>
 #include <iostream>
 #include <psapi.h>
-
+#include <sddl.h>
+#include <winbase.h>
 
 #define CONSOLE
 #define PROCESS_CNT 512
@@ -20,7 +25,7 @@ BOOL ListProcessModules(DWORD dwPID);
 BOOL GetProcessList();
 INT Is_64(DWORD PID);
 VOID GetMitigationInfo(DWORD PID, BOOL* policyDep, BOOL* policyAslr);
-
+DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSID);
 
 INT Is_64(DWORD PID)
 {
@@ -102,60 +107,60 @@ BOOL GetProcessList()
     // PID И НАЗАВАНИЕ
     _tprintf(TEXT("\n%ld %s "), pe32.th32ProcessID, pe32.szExeFile);
 
-    //// ПУТЬ  К ФАЙЛУ
-    //dwCopiedBufLen = GetModuleFileNameExW(hProcess, NULL, wstrExePath, dwPathLen);
-    //if (dwCopiedBufLen > 0)
-    //{
-    //  wprintf(L"%s ", wstrExePath);
-    //}
-    //else
-    //{
-    //  wprintf(L"N/a");
-    //}
+    // ПУТЬ  К ФАЙЛУ
+    dwCopiedBufLen = GetModuleFileNameExW(hProcess, NULL, wstrExePath, dwPathLen);
+    if (dwCopiedBufLen > 0)
+    {
+      wprintf(L"%s ", wstrExePath);
+    }
+    else
+    {
+      wprintf(L"N/a");
+    }
 
-    ////PID РОДИТЕЛЯ
-    //wprintf(L" %d", pe32.th32ParentProcessID);
+    //PID РОДИТЕЛЯ
+    wprintf(L" %d", pe32.th32ParentProcessID);
 
-    ////ИМЯ РОДИТЕЛЯ
-    //hParentProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ParentProcessID);
-    //if (hParentProcess == INVALID_HANDLE_VALUE)
-    //{
-    //  wprintf(L" N/a\n");
-    //}
-    //else
-    //{
-    //  HMODULE hMod;
-    //  DWORD dwLen;
-    //  DWORD dwRes;
-    //  CHAR szProcessName[MAX_PATH];
-    //  dwRes = GetProcessImageFileNameA(hParentProcess, szProcessName, MAX_PATH);
-    //  if (dwRes > 0)
-    //  {
-    //    printf(" %s \n",szProcessName);
-    //  }
-    //  else
-    //  {
-    //    printf(" N/a\n");
-    //  }
-    //}
+    //ИМЯ РОДИТЕЛЯ
+    hParentProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ParentProcessID);
+    if (hParentProcess == INVALID_HANDLE_VALUE)
+    {
+      wprintf(L" N/a\n");
+    }
+    else
+    {
+      HMODULE hMod;
+      DWORD dwLen;
+      DWORD dwRes;
+      CHAR szProcessName[MAX_PATH];
+      dwRes = GetProcessImageFileNameA(hParentProcess, szProcessName, MAX_PATH);
+      if (dwRes > 0)
+      {
+        printf(" %s \n",szProcessName);
+      }
+      else
+      {
+        printf(" N/a\n");
+      }
+    }
 
-    //// МОДУЛИ
-    //ListProcessModules(pe32.th32ProcessID);
+    // МОДУЛИ
+    ListProcessModules(pe32.th32ProcessID);
 
 
-    //// ТИП (РАЗРЯДНОСТЬ)
-    //switch ( Is_64 ( pe32.th32ProcessID ) )
-    //{
-    //case 1:
-    //  wprintf(L"type x64\n");
-    //  break;
-    //case 0:
-    //  wprintf(L"type x86\n");
-    //  break;
-    //case -1:
-    //  wprintf(L"N/a\n");
-    //  break;
-    //}
+    // ТИП (РАЗРЯДНОСТЬ)
+    switch ( Is_64 ( pe32.th32ProcessID ) )
+    {
+    case 1:
+      wprintf(L"type x64\n");
+      break;
+    case 0:
+      wprintf(L"type x86\n");
+      break;
+    case -1:
+      wprintf(L"N/a\n");
+      break;
+    }
 
 
     //ASLR & DEP
@@ -179,6 +184,23 @@ BOOL GetProcessList()
       wprintf(L"\nASLR disabled\n");
     }
 
+
+    // ИМЯ ВЛАДЕЛЬЦА И ЕГО СИД
+    DWORD dwNameLen = 256;
+    LPSTR strSID = (LPSTR)malloc(dwNameLen * sizeof(CHAR));;
+    LPWSTR wstrName = (LPWSTR)malloc(dwNameLen*sizeof(WCHAR));
+
+    DWORD dwRes = GetOwnerNamenSID(pe32.th32ProcessID, wstrName, dwNameLen, &strSID);
+    if (0 != dwRes)
+    {
+      // можно просто ничего не печатать
+      printf("errrrrrroooor: %lu\n", dwRes);
+    }
+    else
+    {
+      wprintf(L"%s\n", wstrName);
+      printf("%s\n", strSID);
+    }
 
     CloseHandle(hProcess);
 
@@ -242,6 +264,46 @@ VOID GetMitigationInfo(DWORD PID, BOOL* bDep, BOOL* bAslr)
   *bAslr = GetProcessMitigationPolicy(hProcess, ProcessASLRPolicy, &policyAslr, sizeof(policyAslr));
   CloseHandle(hProcess);
   return;
+}
+
+
+DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSID)
+{
+  HANDLE hProcess;
+  HANDLE hToken;
+  PTOKEN_OWNER ptokenOwner;
+  DWORD dwSize = 0;
+  DWORD dwDomLen = 256;
+  
+  LPWSTR strDomain = (LPWSTR)calloc(dwDomLen, 256);
+  SID_NAME_USE suseUse;
+
+  hProcess = OpenProcess(PROCESS_ALL_ACCESS, false, PID);
+  if (0 == OpenProcessToken(hProcess, TOKEN_QUERY, &hToken))
+  {
+    return GetLastError();
+  }
+  GetTokenInformation(hToken, TokenOwner, NULL, dwSize, &dwSize);
+  ptokenOwner = (PTOKEN_OWNER)GlobalAlloc(GPTR, dwSize);
+  GetTokenInformation(hToken, TokenOwner, ptokenOwner, dwSize, &dwSize);
+
+  if (NULL == ptokenOwner)
+  {
+    return GetLastError();
+  }
+  if (0 == ConvertSidToStringSidA(ptokenOwner->Owner, strSID))
+  {
+    return GetLastError();
+  }
+
+  suseUse = SidTypeUnknown;
+  if (0 == LookupAccountSidW(NULL, ptokenOwner->Owner, wstrName, &dwNameLen, strDomain, &dwDomLen, &suseUse))
+  {
+    return GetLastError();
+  }
+  //printf("%s\n", str);
+  //wprintf(L"%s\n", strName);
+  return 0;
 }
 
 
