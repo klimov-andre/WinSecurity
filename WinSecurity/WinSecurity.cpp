@@ -27,6 +27,8 @@ BOOL GetProcessList();
 INT Is_64(DWORD PID);
 VOID GetMitigationInfo(DWORD PID, BOOL* policyDep, BOOL* policyAslr);
 DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSID);
+BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
+
 
 INT Is_64(DWORD PID)
 {
@@ -148,7 +150,6 @@ BOOL GetProcessList()
     // МОДУЛИ
     ListProcessModules(pe32.th32ProcessID);
 
-
     // ТИП (РАЗРЯДНОСТЬ)
     switch ( Is_64 ( pe32.th32ProcessID ) )
     {
@@ -162,7 +163,6 @@ BOOL GetProcessList()
       wprintf(L"N/a\n");
       break;
     }
-
 
     //ASLR & DEP
     BOOL bDep;
@@ -184,7 +184,6 @@ BOOL GetProcessList()
     {
       wprintf(L"\nASLR disabled\n");
     }
-
 
     // ИМЯ ВЛАДЕЛЬЦА И ЕГО СИД
     DWORD dwNameLen = 256;
@@ -217,6 +216,7 @@ BOOL ListProcessModules(DWORD PID)
   HANDLE hModuleSnap = INVALID_HANDLE_VALUE;
   MODULEENTRY32 me32;
   wprintf(L"MODULI: ");
+
   // Take a snapshot of all modules in the specified process.
   hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, PID);
   if (hModuleSnap == INVALID_HANDLE_VALUE)
@@ -230,14 +230,13 @@ BOOL ListProcessModules(DWORD PID)
 
   // Retrieve information about the first module,
   // and exit if unsuccessful
-  
   if (!Module32First(hModuleSnap, &me32))
   {
     PRINT_STR_CONSOLE("Module32First");
     CloseHandle(hModuleSnap);
     return(FALSE);
   }
-  //me32.ex
+
   // Now walk the module list of the process,
   // and display information about each module
   do
@@ -309,8 +308,11 @@ DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSI
 DWORD GetFileOwnerName(CHAR *path)
 {
   SE_OBJECT_TYPE obj_type = SE_FILE_OBJECT;
-  //CHAR *path = new CHAR[BUF_LEN];
-  //memcpy(path, "C:\\Users\\Андрей\\Documents\\test.c", sizeof("C:\\Users\\Андрей\\Documents\\test.c"));
+
+#if 0 
+  CHAR *path = new CHAR[BUF_LEN];
+  memcpy(path, "C:\\Users\\Андрей\\Documents\\test.c", sizeof("C:\\Users\\Андрей\\Documents\\test.c"));
+#endif
 
   PSID pSID = NULL;
   PSECURITY_DESCRIPTOR SD;
@@ -433,8 +435,12 @@ VOID PrintAce( CHAR* name, INT ace_type, SID_NAME_USE suse, ACCESS_MASK mask)
 DWORD PrintACLs(CHAR *path)
 {
   SE_OBJECT_TYPE obj_type = SE_FILE_OBJECT;
-  //CHAR *path = new CHAR[BUF_LEN];
-  //memcpy(path, "C:\\Users\\Андрей\\Documents\\test.c",sizeof("C:\\Users\\Андрей\\Documents\\test.c"));
+
+#if 0
+  CHAR *path = new CHAR[BUF_LEN];
+  memcpy(path, "C:\\Users\\Андрей\\Documents\\test.c",sizeof("C:\\Users\\Андрей\\Documents\\test.c"));
+#endif
+
   PACL Dacl = NULL;
   PSECURITY_DESCRIPTOR SD;
   SID p;
@@ -485,9 +491,104 @@ DWORD PrintACLs(CHAR *path)
   }
 }
 
+
+// Изменить владельца указанного файла
+DWORD SetNewOwner(CHAR* strFilename, CHAR* strNewOwner)
+{
+  HANDLE hToken = NULL;
+  PSID pSID = NULL;
+  PSECURITY_DESCRIPTOR pSecurityDesc = NULL;
+  DWORD dwLen = 0;
+  DWORD dwSidLen = 0;
+  CHAR strBuf[BUF_LEN];
+  SID_NAME_USE suse;
+
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hToken))
+  {
+    return GetLastError();
+  }
+  else
+  {
+    SetPrivilege(hToken, SE_TAKE_OWNERSHIP_NAME, 1);
+    SetPrivilege(hToken, SE_SECURITY_NAME, 1);
+    SetPrivilege(hToken, SE_BACKUP_NAME, 1);
+    SetPrivilege(hToken, SE_RESTORE_NAME, 1);
+  }
+
+  GetFileSecurityA(strFilename, OWNER_SECURITY_INFORMATION, pSecurityDesc, 0, &dwLen);
+  pSecurityDesc = (PSECURITY_DESCRIPTOR)malloc(dwLen);
+  if (!InitializeSecurityDescriptor(pSecurityDesc, SECURITY_DESCRIPTOR_REVISION))
+  {
+    return GetLastError();
+  }
+
+  dwLen = BUF_LEN;
+  LookupAccountNameA(NULL, strNewOwner, NULL, &dwSidLen, NULL, &dwLen, &suse);
+  pSID = (PSID)malloc(dwSidLen);
+  if (!LookupAccountNameA(NULL, strNewOwner, pSID, &dwSidLen, strBuf, &dwLen, &suse))
+  {
+    return GetLastError();
+  }
+
+  if (SetSecurityDescriptorOwner(pSecurityDesc, pSID, 0))
+  {
+    DWORD dwRes = SetFileSecurityA(strFilename, OWNER_SECURITY_INFORMATION, pSecurityDesc);
+    SetPrivilege(hToken, SE_TAKE_OWNERSHIP_NAME, 0);
+    SetPrivilege(hToken, SE_SECURITY_NAME, 0);
+    SetPrivilege(hToken, SE_BACKUP_NAME, 0);
+    SetPrivilege(hToken, SE_RESTORE_NAME, 0);
+    free(pSID);
+    free(pSecurityDesc);
+    return dwRes;
+  }
+}
+
+
+// Включает/Отключает привилегию процессу 
+// bEnablePrivilege = 0 - отключить
+// bEnablePrivilege = 1 - включить
+// hToken - токен процесса
+// lpszPrivilege - название привилегии
+BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege)
+{
+  TOKEN_PRIVILEGES tp;
+  LUID luid;
+
+  if (!LookupPrivilegeValue(NULL, lpszPrivilege, &luid))
+  {
+    return FALSE;
+  }
+
+  tp.PrivilegeCount = 1;
+  tp.Privileges[0].Luid = luid;
+  if (bEnablePrivilege)
+  {
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+  }
+  else
+  {
+    tp.Privileges[0].Attributes = 0;
+  }
+
+  if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), (PTOKEN_PRIVILEGES)NULL, (PDWORD)NULL))
+  {
+    return FALSE;
+  }
+
+  if (GetLastError() == ERROR_NOT_ALL_ASSIGNED)
+  {
+    printf("The token does not have the specified privilege. \n");
+    return FALSE;
+  }
+  return TRUE;
+}
+
+
 int main()
 {
   setlocale(LC_ALL, "Rus");
-  //GetProcessList();
+  DWORD dwRes = SetNewOwner((CHAR*)"C:\\Virtual\\ddd.txt", (CHAR*)"Userok");
+  printf("%lu\n", dwRes);
+  GetFileOwnerName((CHAR*)"C:\\Virtual\\ddd.txt");
 }
 
