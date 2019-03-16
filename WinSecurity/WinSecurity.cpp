@@ -584,11 +584,88 @@ BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege)
 }
 
 
+VOID SetExpAccStruct(EXPLICIT_ACCESS* x, LPWSTR username, LPWSTR permission, BOOL bIsAllowed)
+{
+  x->grfInheritance = NO_INHERITANCE;
+
+  x->Trustee.ptstrName = username;
+  x->Trustee.TrusteeForm = TRUSTEE_IS_NAME;
+  x->Trustee.TrusteeType = TRUSTEE_IS_USER;
+
+  if (lstrcmpW(L"DELETE", permission) == 0)
+    x->grfAccessPermissions = DELETE;
+  if (lstrcmpW(L"READ_CONTROL", permission) == 0)
+    x->grfAccessPermissions = READ_CONTROL;
+  if (lstrcmpW(L"WRITE_DAC", permission) == 0)
+    x->grfAccessPermissions = WRITE_DAC;
+  if (lstrcmpW(L"WRITE_OWNER", permission) == 0)
+    x->grfAccessPermissions = WRITE_OWNER;
+  if (lstrcmpW(L"SYNCHRONIZE", permission) == 0)
+    x->grfAccessPermissions = SYNCHRONIZE;
+  if (lstrcmpW(L"SPECIFIC_RIGHTS_ALL", permission) == 0)
+    x->grfAccessPermissions = SPECIFIC_RIGHTS_ALL;
+  if (lstrcmpW(L"ACCESS_SYSTEM_SECURITY", permission) == 0)
+    x->grfAccessPermissions = ACCESS_SYSTEM_SECURITY;
+  if (lstrcmpW(L"GENERIC_READ", permission) == 0)
+    x->grfAccessPermissions = GENERIC_READ;
+  if (lstrcmpW(L"GENERIC_WRITE", permission) == 0)
+    x->grfAccessPermissions = GENERIC_WRITE;
+  if (lstrcmpW(L"GENERIC_EXECUTE", permission) == 0)
+    x->grfAccessPermissions = GENERIC_EXECUTE;
+  if (lstrcmpW(L"GENERIC_ALL", permission) == 0)
+    x->grfAccessPermissions = GENERIC_ALL;
+
+  if (TRUE == bIsAllowed)
+  {
+    x->grfAccessMode = GRANT_ACCESS;
+  }
+  else
+  {
+    x->grfAccessMode = DENY_ACCESS;
+  }
+}
+
+
+// Меняет ACL указанного файла (вообще-то добавляет/удаляет одно право доступа к нему)
+// bIsAllowed = 1 (TRUE)  -> разрешить действие
+// bIsAllowed = 0 (FALSE) -> запретить действие
+// LPWSTR - это указатель на wchar строку
+DWORD SetPermission(LPWSTR path, LPWSTR username, LPWSTR permission, BOOL bIsAllowed)
+{
+  PACL pACLnew = NULL;
+  PACL pACLcur = NULL;
+  PSECURITY_DESCRIPTOR pSD = NULL;
+  EXPLICIT_ACCESS newEntry = { 0 };
+
+  if (ERROR_SUCCESS != GetNamedSecurityInfoW(path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, &pACLcur, NULL, &pSD))
+  {
+    return GetLastError();
+  }
+
+  SetExpAccStruct(&newEntry, username, permission, bIsAllowed);
+  if (ERROR_SUCCESS != SetEntriesInAclW(1, &newEntry, pACLcur, &pACLnew))
+  {
+    return GetLastError();
+  }
+  else
+  {
+    SetNamedSecurityInfoW(path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, pACLnew, NULL);
+    LocalFree(pACLnew);
+    LocalFree(pACLcur);
+    LocalFree(pSD);
+    return GetLastError();
+  }
+}
+
+
 int main()
 {
   setlocale(LC_ALL, "Rus");
-  DWORD dwRes = SetNewOwner((CHAR*)"C:\\Virtual\\ddd.txt", (CHAR*)"Userok");
+
+  // Запретили Userok DELETить
+  DWORD dwRes = SetPermission((LPWSTR)L"C:\\Virtual\\ddd.txt", (LPWSTR)L"Yura", (LPWSTR)L"GENERIC_EXECUTE", FALSE);
+
   printf("%lu\n", dwRes);
-  GetFileOwnerName((CHAR*)"C:\\Virtual\\ddd.txt");
+  PrintACLs((LPSTR)"C:\\Virtual\\ddd.txt");
 }
 
