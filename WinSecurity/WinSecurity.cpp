@@ -9,10 +9,11 @@
 #include <psapi.h>
 #include <sddl.h>
 #include <winbase.h>
+#include <aclapi.h>
 
 #define CONSOLE
 #define PROCESS_CNT 512
-
+#define BUF_LEN 512
 
 #ifdef CONSOLE
   #define PRINT_STR_CONSOLE(x) printf(x" line: %d, err: %lu\n", __LINE__, GetLastError())
@@ -301,15 +302,192 @@ DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSI
   {
     return GetLastError();
   }
-  //printf("%s\n", str);
-  //wprintf(L"%s\n", strName);
+  return 0;
+}
+
+// ПЕЧАТАЕТ ИМЯ владельца файла
+DWORD GetFileOwnerName(CHAR *path)
+{
+  SE_OBJECT_TYPE obj_type = SE_FILE_OBJECT;
+  //CHAR *path = new CHAR[BUF_LEN];
+  //memcpy(path, "C:\\Users\\Андрей\\Documents\\test.c", sizeof("C:\\Users\\Андрей\\Documents\\test.c"));
+
+  PSID pSID = NULL;
+  PSECURITY_DESCRIPTOR SD;
+  CHAR name[BUF_LEN] = "", domain[BUF_LEN] = "";
+  DWORD userLen = BUF_LEN, domainLen = BUF_LEN;
+  SID_NAME_USE sidName;
+
+  // Получить sid владельца
+  if (!GetNamedSecurityInfoA(path, obj_type, OWNER_SECURITY_INFORMATION, &pSID, NULL, NULL, NULL, &SD) == ERROR_SUCCESS)
+  {
+    return GetLastError();
+  }
+
+  if (!LookupAccountSidA(NULL, pSID, name, &userLen, domain, &domainLen, &sidName))
+  {
+    DWORD err = GetLastError();
+    if (err == ERROR_NONE_MAPPED)
+    {
+      strcpy(name, "NONE_MAPPED");
+    }
+    else
+    {
+      return GetLastError();
+    }
+  }
+
+  printf("%s\n", name);
   return 0;
 }
 
 
+
+// Выводит запись контроля доступа в нормальном виде (исп-ся в PrintACLs)
+VOID PrintAce( CHAR* name, INT ace_type, SID_NAME_USE suse, ACCESS_MASK mask)
+{
+  printf("Name: %s\n", name);
+  switch (ace_type)
+  {
+  case ACCESS_ALLOWED_ACE_TYPE:
+    printf("ACCESS_ALLOWED_ACE_TYPE\n");
+    break;
+  case ACCESS_DENIED_ACE_TYPE:
+    printf("ACCESS_DENIED_ACE_TYPE\n");
+    break;
+  case SYSTEM_AUDIT_ACE_TYPE:
+    printf("SYSTEM_AUDIT_ACE_TYPE\n");
+    break;
+  }
+
+  // это просто может понадобиться и не хочется комментить
+#if 0
+  printf("SID type: ");
+  switch (suse)
+  {
+  case SidTypeUser:
+    printf("SidTypeUser\n");
+    break;
+  case SidTypeGroup:
+    printf("SidTypeGroup\n");
+    break;
+  case SidTypeDomain:
+    printf("SidTypeDomain\n");
+    break;
+  case SidTypeAlias:
+    printf("SidTypeAlias\n");
+    break;
+  case SidTypeWellKnownGroup:
+    printf("SidTypeWellKnownGroup\n");
+    break;
+  case SidTypeDeletedAccount:
+    printf("SidTypeDeletedAccount\n");
+    break;
+  case SidTypeInvalid:
+    printf("SidTypeInvalid\n");
+    break;
+  case SidTypeUnknown:
+    printf("SidTypeUnknown\n");
+    break;
+  case SidTypeComputer:
+    printf("SidTypeComputer\n");
+    break;
+  case SidTypeLabel:
+    printf("SidTypeLabel\n");
+    break;
+  case SidTypeLogonSession:
+    printf("SidTypeLogonSession\n");
+    break;
+  }
+#endif
+
+  printf("Mask: %x\n", mask);
+  printf("Mask values:\n");
+  if (mask&DELETE)
+    printf("  DELETE\n");
+  if (mask&READ_CONTROL)
+    printf("  READ_CONTROL\n");
+  if (mask&WRITE_DAC)
+    printf("  WRITE_DAC\n");
+  if (mask&WRITE_OWNER)
+    printf("  WRITE_OWNER\n");
+  if (mask&SYNCHRONIZE)
+    printf("  WRITE_DAC\n");
+  if (mask&SPECIFIC_RIGHTS_ALL)
+    printf("  SPECIFIC_RIGHTS_ALL\n");
+  if (mask&ACCESS_SYSTEM_SECURITY)
+    printf("  ACCESS_SYSTEM_SECURITY\n");
+  if (mask&GENERIC_READ)
+    printf("  GENERIC_READ\n");
+  if (mask&GENERIC_WRITE)
+    printf("  GENERIC_WRITE\n");
+  if (mask&GENERIC_EXECUTE)
+    printf("  GENERIC_EXECUTE\n");
+  if (mask&GENERIC_ALL)
+    printf("  GENERIC_ALL\n");
+  printf("\n");
+}
+
+
+
+DWORD PrintACLs(CHAR *path)
+{
+  SE_OBJECT_TYPE obj_type = SE_FILE_OBJECT;
+  //CHAR *path = new CHAR[BUF_LEN];
+  //memcpy(path, "C:\\Users\\Андрей\\Documents\\test.c",sizeof("C:\\Users\\Андрей\\Documents\\test.c"));
+  PACL Dacl = NULL;
+  PSECURITY_DESCRIPTOR SD;
+  SID p;
+  ACL_SIZE_INFORMATION acl_size;
+
+  // Извлечь список доступа
+  if (!GetNamedSecurityInfoA(path, obj_type, DACL_SECURITY_INFORMATION, NULL, NULL, &Dacl, NULL, &SD) == ERROR_SUCCESS)
+  {
+    printf("GetNamedSecurityInfoA\n");
+    return GetLastError();
+  }
+
+  // Узнать число элементов в списке
+  if (!GetAclInformation(Dacl, &acl_size, sizeof(acl_size), AclSizeInformation))
+  {
+    printf("GetAclInformation\n");
+    return GetLastError();
+  }
+
+  // прогнать по списку и вывести записи
+  for (int i = 0; i < acl_size.AceCount; i++)
+  {
+    LPVOID pAce;
+    PSID pSID;
+    CHAR name[1024] = "", domain[1024] = "";
+    DWORD userLen = 1024, domainLen = 1024;
+    SID_NAME_USE suse;
+
+    if (!GetAce(Dacl, i, &pAce))
+    {
+      return GetLastError();
+    }
+    pSID = (PSID)(&((ACCESS_ALLOWED_ACE*)pAce)->SidStart);
+    
+    if (!LookupAccountSidA(NULL, pSID, name, &userLen, domain, &domainLen, &suse))
+    {
+      DWORD err = GetLastError();
+      if (err == ERROR_NONE_MAPPED)
+      {
+        strcpy(name, "NONE_MAPPED");
+      }
+      else
+      {
+        return GetLastError();
+      }
+    }
+    PrintAce(name, (*(ACCESS_ALLOWED_ACE*)pAce).Header.AceType, suse, ((ACCESS_ALLOWED_ACE*)pAce)->Mask);
+  }
+}
+
 int main()
 {
   setlocale(LC_ALL, "Rus");
-  GetProcessList();
+  //GetProcessList();
 }
 
