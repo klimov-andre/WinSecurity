@@ -687,23 +687,23 @@ DWORD PrintProcessIntegrity(DWORD PID)
   GetTokenInformation(hToken, TokenIntegrityLevel, pMandatory, dwSize, &dwSize);
 
   ConvertSidToStringSidA(pMandatory->Label.Sid, &strSid);
-  if (!strcmp(strSid, "S-1-16-0"))
+  if (0 == strcmp(strSid, "S-1-16-0"))
   {
     printf("Untrusted integrity\n");
   }
-  else if (!strcmp(strSid, "S-1-16-4096"))
+  else if (0 == strcmp(strSid, "S-1-16-4096"))
   {
     printf("Low integrity\n");
   }
-  else if (!strcmp(strSid, "S-1-16-8192"))
+  else if (0 == strcmp(strSid, "S-1-16-8192"))
   {
     printf("Medium integrity\n");
   }
-  else if (!strcmp(strSid, "S-1-16-12288"))
+  else if (0 == strcmp(strSid, "S-1-16-12288"))
   {
     printf("High integrity\n");
   }
-  else if (!strcmp(strSid, "S-1-16-16384"))
+  else if (0 == strcmp(strSid, "S-1-16-16384"))
   {
     printf("Untrusted integrity\n");
   }
@@ -715,10 +715,74 @@ DWORD PrintProcessIntegrity(DWORD PID)
 }
 
 
+// Изменяет integrity level процесса
+// Можно только понижать (так и надо)
+// strIntegrity = "Untrusted" | "Low" |..
+DWORD SetProcessIntegrity(DWORD PID, LPSTR strIntegrity)
+{
+  HANDLE hProcess;
+  HANDLE hToken;
+  CONST CHAR* strSid;
+  PSID pSID;
+  TOKEN_MANDATORY_LABEL integrity = { 0 };
+
+  hProcess = OpenProcess(PROCESS_ALL_ACCESS, false, PID);
+  if (!hProcess)
+  {
+    return GetLastError();
+  }
+  if (!OpenProcessToken(hProcess, TOKEN_ALL_ACCESS, &hToken))
+  {
+    return GetLastError();
+  }
+
+  if (0 == strcmp(strIntegrity, "Untrusted"))
+  {
+    strSid = "S-1-16-0";
+  }
+  else if (0 == strcmp(strIntegrity, "Low"))
+  {
+    strSid = "S-1-16-4096";
+  }
+  else if (0 == strcmp(strIntegrity, "Medium"))
+  {
+    strSid = "S-1-16-8192";
+  }
+  else if (0 == strcmp(strIntegrity, "High"))
+  {
+    strSid = "S-1-16-12288";
+  }
+  else if (0 == strcmp(strIntegrity, "System"))
+  {
+    strSid = "S-1-16-16384";
+  }
+  else
+  {
+    return 1;
+  }
+  
+  ConvertStringSidToSidA(strSid, &pSID);
+  integrity.Label.Attributes = SE_GROUP_INTEGRITY;
+  integrity.Label.Sid = pSID;
+
+  if (SetTokenInformation(hToken, TokenIntegrityLevel, &integrity, sizeof(TOKEN_MANDATORY_LABEL) + GetSidLengthRequired(1)))
+  {
+    return 0;
+  }
+  else
+  {
+    return GetLastError();
+  }
+}
+
+
 int main()
 {
   setlocale(LC_ALL, "Rus");
   GetProcessList();
+  int aa = SetProcessIntegrity(2208,(LPSTR)"Low");
+  GetProcessList();
+
   // Запретили Userok DELETить
   //DWORD dwRes = SetPermission((LPWSTR)L"C:\\Virtual\\ddd.txt", (LPWSTR)L"Yura", (LPWSTR)L"GENERIC_EXECUTE", FALSE);
   //
