@@ -28,6 +28,7 @@ INT Is_64(DWORD PID);
 VOID GetMitigationInfo(DWORD PID, BOOL* policyDep, BOOL* policyAslr);
 DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSID);
 BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
+DWORD PrintProcessIntegrity(DWORD PID);
 
 
 INT Is_64(DWORD PID)
@@ -110,97 +111,101 @@ BOOL GetProcessList()
     // PID И НАЗАВАНИЕ
     _tprintf(TEXT("\n%ld %s "), pe32.th32ProcessID, pe32.szExeFile);
 
-    // ПУТЬ  К ФАЙЛУ
-    dwCopiedBufLen = GetModuleFileNameExW(hProcess, NULL, wstrExePath, dwPathLen);
-    if (dwCopiedBufLen > 0)
-    {
-      wprintf(L"%s ", wstrExePath);
-    }
-    else
-    {
-      wprintf(L"N/a");
-    }
+    //// ПУТЬ  К ФАЙЛУ
+    //dwCopiedBufLen = GetModuleFileNameExW(hProcess, NULL, wstrExePath, dwPathLen);
+    //if (dwCopiedBufLen > 0)
+    //{
+    //  wprintf(L"%s ", wstrExePath);
+    //}
+    //else
+    //{
+    //  wprintf(L"N/a");
+    //}
 
-    //PID РОДИТЕЛЯ
-    wprintf(L" %d", pe32.th32ParentProcessID);
+    ////PID РОДИТЕЛЯ
+    //wprintf(L" %d", pe32.th32ParentProcessID);
 
-    //ИМЯ РОДИТЕЛЯ
-    hParentProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ParentProcessID);
-    if (hParentProcess == INVALID_HANDLE_VALUE)
-    {
-      wprintf(L" N/a\n");
-    }
-    else
-    {
-      HMODULE hMod;
-      DWORD dwLen;
-      DWORD dwRes;
-      CHAR szProcessName[MAX_PATH];
-      dwRes = GetProcessImageFileNameA(hParentProcess, szProcessName, MAX_PATH);
-      if (dwRes > 0)
-      {
-        printf(" %s \n",szProcessName);
-      }
-      else
-      {
-        printf(" N/a\n");
-      }
-    }
+    ////ИМЯ РОДИТЕЛЯ
+    //hParentProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ParentProcessID);
+    //if (hParentProcess == INVALID_HANDLE_VALUE)
+    //{
+    //  wprintf(L" N/a\n");
+    //}
+    //else
+    //{
+    //  HMODULE hMod;
+    //  DWORD dwLen;
+    //  DWORD dwRes;
+    //  CHAR szProcessName[MAX_PATH];
+    //  dwRes = GetProcessImageFileNameA(hParentProcess, szProcessName, MAX_PATH);
+    //  if (dwRes > 0)
+    //  {
+    //    printf(" %s \n",szProcessName);
+    //  }
+    //  else
+    //  {
+    //    printf(" N/a\n");
+    //  }
+    //}
 
-    // МОДУЛИ
-    ListProcessModules(pe32.th32ProcessID);
+    //// МОДУЛИ
+    //ListProcessModules(pe32.th32ProcessID);
 
-    // ТИП (РАЗРЯДНОСТЬ)
-    switch ( Is_64 ( pe32.th32ProcessID ) )
-    {
-    case 1:
-      wprintf(L"type x64\n");
-      break;
-    case 0:
-      wprintf(L"type x86\n");
-      break;
-    case -1:
-      wprintf(L"N/a\n");
-      break;
-    }
+    //// ТИП (РАЗРЯДНОСТЬ)
+    //switch ( Is_64 ( pe32.th32ProcessID ) )
+    //{
+    //case 1:
+    //  wprintf(L"type x64\n");
+    //  break;
+    //case 0:
+    //  wprintf(L"type x86\n");
+    //  break;
+    //case -1:
+    //  wprintf(L"N/a\n");
+    //  break;
+    //}
 
-    //ASLR & DEP
-    BOOL bDep;
-    BOOL bAslr;
-    GetMitigationInfo(pe32.th32ProcessID, &bDep, &bAslr);
-    if (bDep)
-    {
-      wprintf(L"\nDEP enabled");
-    }
-    else
-    {
-      wprintf(L"\nDEP disabled");
-    }
-    if (bAslr)
-    {
-      wprintf(L"\nASLR enabled\n");
-    }
-    else
-    {
-      wprintf(L"\nASLR disabled\n");
-    }
+    ////ASLR & DEP
+    //BOOL bDep;
+    //BOOL bAslr;
+    //GetMitigationInfo(pe32.th32ProcessID, &bDep, &bAslr);
+    //if (bDep)
+    //{
+    //  wprintf(L"\nDEP enabled");
+    //}
+    //else
+    //{
+    //  wprintf(L"\nDEP disabled");
+    //}
+    //if (bAslr)
+    //{
+    //  wprintf(L"\nASLR enabled\n");
+    //}
+    //else
+    //{
+    //  wprintf(L"\nASLR disabled\n");
+    //}
 
-    // ИМЯ ВЛАДЕЛЬЦА И ЕГО СИД
-    DWORD dwNameLen = 256;
-    LPSTR strSID = (LPSTR)malloc(dwNameLen * sizeof(CHAR));;
-    LPWSTR wstrName = (LPWSTR)malloc(dwNameLen*sizeof(WCHAR));
+    //// ИМЯ ВЛАДЕЛЬЦА И ЕГО СИД
+    //DWORD dwNameLen = 256;
+    //LPSTR strSID = (LPSTR)malloc(dwNameLen * sizeof(CHAR));;
+    //LPWSTR wstrName = (LPWSTR)malloc(dwNameLen*sizeof(WCHAR));
 
-    DWORD dwRes = GetOwnerNamenSID(pe32.th32ProcessID, wstrName, dwNameLen, &strSID);
-    if (0 != dwRes)
-    {
-      // можно просто ничего не печатать
-      printf("errrrrrroooor: %lu\n", dwRes);
-    }
-    else
-    {
-      wprintf(L"%s\n", wstrName);
-      printf("%s\n", strSID);
-    }
+    //DWORD dwRes = GetOwnerNamenSID(pe32.th32ProcessID, wstrName, dwNameLen, &strSID);
+    //if (0 != dwRes)
+    //{
+    //  // можно просто ничего не печатать
+    //  printf("errrrrrroooor: %lu\n", dwRes);
+    //}
+    //else
+    //{
+    //  wprintf(L"%s\n", wstrName);
+    //  printf("%s\n", strSID);
+    //}
+
+    // УРОВЕНЬ ЦЕЛОСТНОСТИ
+    printf("%lu\n", PrintProcessIntegrity(pe32.th32ProcessID));
+
 
     CloseHandle(hProcess);
 
@@ -658,14 +663,66 @@ DWORD SetPermission(LPWSTR path, LPWSTR username, LPWSTR permission, BOOL bIsAll
 }
 
 
+//Выводит уровень целостности
+DWORD PrintProcessIntegrity(DWORD PID)
+{
+  HANDLE hProcess;
+  HANDLE hToken;
+  DWORD dwSize = 0;
+  PTOKEN_MANDATORY_LABEL pMandatory;
+  CHAR* strSid = (CHAR*)malloc(64);
+
+  hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION , false, PID);
+  if (!hProcess)
+  {
+    return GetLastError();
+  }
+  if (!OpenProcessToken(hProcess, TOKEN_QUERY, &hToken))
+  {
+    return GetLastError();
+  }
+
+  GetTokenInformation(hToken, TokenIntegrityLevel, NULL, 0, &dwSize);
+  pMandatory = (PTOKEN_MANDATORY_LABEL)malloc(dwSize);
+  GetTokenInformation(hToken, TokenIntegrityLevel, pMandatory, dwSize, &dwSize);
+
+  ConvertSidToStringSidA(pMandatory->Label.Sid, &strSid);
+  if (!strcmp(strSid, "S-1-16-0"))
+  {
+    printf("Untrusted integrity\n");
+  }
+  else if (!strcmp(strSid, "S-1-16-4096"))
+  {
+    printf("Low integrity\n");
+  }
+  else if (!strcmp(strSid, "S-1-16-8192"))
+  {
+    printf("Medium integrity\n");
+  }
+  else if (!strcmp(strSid, "S-1-16-12288"))
+  {
+    printf("High integrity\n");
+  }
+  else if (!strcmp(strSid, "S-1-16-16384"))
+  {
+    printf("Untrusted integrity\n");
+  }
+  
+  CloseHandle(hToken);
+  CloseHandle(hProcess);
+  return 0;
+  
+}
+
+
 int main()
 {
   setlocale(LC_ALL, "Rus");
-
+  GetProcessList();
   // Запретили Userok DELETить
-  DWORD dwRes = SetPermission((LPWSTR)L"C:\\Virtual\\ddd.txt", (LPWSTR)L"Yura", (LPWSTR)L"GENERIC_EXECUTE", FALSE);
-
-  printf("%lu\n", dwRes);
-  PrintACLs((LPSTR)"C:\\Virtual\\ddd.txt");
+  //DWORD dwRes = SetPermission((LPWSTR)L"C:\\Virtual\\ddd.txt", (LPWSTR)L"Yura", (LPWSTR)L"GENERIC_EXECUTE", FALSE);
+  //
+  //printf("%lu\n", dwRes);
+  //PrintACLs((LPSTR)"C:\\Virtual\\ddd.txt");
 }
 
