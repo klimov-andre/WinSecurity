@@ -29,7 +29,7 @@ VOID GetMitigationInfo(DWORD PID, BOOL* policyDep, BOOL* policyAslr);
 DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSID);
 BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
 DWORD PrintProcessIntegrity(DWORD PID);
-
+DWORD ShowProcessPrivilages(DWORD PID);
 
 INT Is_64(DWORD PID)
 {
@@ -203,9 +203,9 @@ BOOL GetProcessList()
     //  printf("%s\n", strSID);
     //}
 
-    // УРОВЕНЬ ЦЕЛОСТНОСТИ
-    printf("%lu\n", PrintProcessIntegrity(pe32.th32ProcessID));
-
+    //// УРОВЕНЬ ЦЕЛОСТНОСТИ
+    // printf("%lu\n", PrintProcessIntegrity(pe32.th32ProcessID));
+    ShowProcessPrivilages(pe32.th32ProcessID);
 
     CloseHandle(hProcess);
 
@@ -773,6 +773,62 @@ DWORD SetProcessIntegrity(DWORD PID, LPSTR strIntegrity)
   {
     return GetLastError();
   }
+}
+
+
+// Вывести привилегии
+DWORD ShowProcessPrivilages(DWORD PID)
+{
+  HANDLE hProcess;
+  HANDLE hToken;
+  DWORD dwSz;
+  PTOKEN_PRIVILEGES pPrivileges;
+  DWORD i;
+  LPSTR strPriv;
+
+  hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, PID);
+
+  OpenProcessToken(hProcess, TOKEN_QUERY, &hToken);
+  GetTokenInformation(hToken, TokenPrivileges, NULL, 0, &dwSz);
+  pPrivileges = (PTOKEN_PRIVILEGES)calloc(dwSz, 1);
+  GetTokenInformation(hToken, TokenPrivileges, pPrivileges, dwSz, &dwSz);
+
+  if (!pPrivileges)
+  {
+    return GetLastError();
+  }
+
+  if (pPrivileges->PrivilegeCount == 0)
+  {
+    printf("None\n");
+    return 0;
+  }
+
+  for (i = 0; i < pPrivileges->PrivilegeCount; i++)
+  {
+    dwSz = 0;
+    LookupPrivilegeNameA(NULL, &pPrivileges->Privileges[i].Luid, NULL, &dwSz);
+    strPriv = (LPSTR)malloc(dwSz);
+    LookupPrivilegeNameA(NULL, &pPrivileges->Privileges[i].Luid, strPriv, &dwSz);
+
+    printf("%s ", strPriv);
+    if (pPrivileges->Privileges[i].Attributes == SE_PRIVILEGE_ENABLED_BY_DEFAULT ||
+      pPrivileges->Privileges[i].Attributes == SE_PRIVILEGE_ENABLED ||
+      pPrivileges->Privileges[i].Attributes == SE_PRIVILEGE_USED_FOR_ACCESS)
+    {
+      printf("enabled\n");
+    }
+    else
+    {
+      printf("disabled\n");
+    }
+
+    if (strPriv)
+    {
+      free(strPriv);
+    }
+  }
+  return 0;
 }
 
 
