@@ -35,7 +35,7 @@
 BOOL ListProcessModules(DWORD dwPID);
 BOOL GetProcessList();
 INT Is_64(DWORD PID);
-VOID GetMitigationInfo(DWORD PID, BOOL* policyDep, BOOL* policyAslr);
+VOID PrintMitigationInfo(DWORD PID);
 DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSID);
 BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
 DWORD PrintProcessIntegrity(DWORD PID);
@@ -175,7 +175,7 @@ BOOL GetProcessList()
     //wprintf(L" %d", pe32.th32ParentProcessID);
 
     //ИМЯ РОДИТЕЛЯ
-    PrintParentProcName(pe32.th32ParentProcessID);
+    //PrintParentProcName(pe32.th32ParentProcessID);
 
     //// МОДУЛИ
     //ListProcessModules(pe32.th32ProcessID);
@@ -195,25 +195,7 @@ BOOL GetProcessList()
     //}
 
     ////ASLR & DEP
-    //BOOL bDep;
-    //BOOL bAslr;
-    //GetMitigationInfo(pe32.th32ProcessID, &bDep, &bAslr);
-    //if (bDep)
-    //{
-    //  wprintf(L"\nDEP enabled");
-    //}
-    //else
-    //{
-    //  wprintf(L"\nDEP disabled");
-    //}
-    //if (bAslr)
-    //{
-    //  wprintf(L"\nASLR enabled\n");
-    //}
-    //else
-    //{
-    //  wprintf(L"\nASLR disabled\n");
-    //}
+    PrintMitigationInfo(pe32.th32ProcessID);
 
     //// ИМЯ ВЛАДЕЛЬЦА И ЕГО СИД
     //DWORD dwNameLen = 256;
@@ -286,7 +268,7 @@ BOOL ListProcessModules(DWORD PID)
 }
 
 
-VOID GetMitigationInfo(DWORD PID, BOOL* bDep, BOOL* bAslr)
+VOID PrintMitigationInfo(DWORD PID)
 {
   HANDLE hProcess;
   PROCESS_MITIGATION_DEP_POLICY policyDep = { 0 };
@@ -297,8 +279,24 @@ VOID GetMitigationInfo(DWORD PID, BOOL* bDep, BOOL* bAslr)
     return;
   }
 
-  *bDep = GetProcessMitigationPolicy(hProcess, ProcessDEPPolicy, &policyDep, sizeof(policyDep));
-  *bAslr = GetProcessMitigationPolicy(hProcess, ProcessASLRPolicy, &policyAslr, sizeof(policyAslr));
+  GetProcessMitigationPolicy(hProcess, ProcessDEPPolicy, &policyDep, sizeof(policyDep));
+  GetProcessMitigationPolicy(hProcess, ProcessASLRPolicy, &policyAslr, sizeof(policyAslr));
+  if (policyDep.Flags)
+  {
+    wprintf(L" DEP enabled\n");
+  }
+  else
+  {
+    wprintf(L" DEP disabled\n");
+  }
+  if (policyAslr.Flags)
+  {
+    wprintf(L" ASLR enabled\n");
+  }
+  else
+  {
+    wprintf(L" ASLR disabled\n");
+  }
   CloseHandle(hProcess);
   return;
 }
