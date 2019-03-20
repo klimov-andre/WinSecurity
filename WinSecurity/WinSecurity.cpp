@@ -13,6 +13,10 @@
 #include <aclapi.h>
 
 
+#include <map>
+#include <algorithm>
+#include <string>
+
 #define CONSOLE
 #define PROCESS_CNT 512
 #define BUF_LEN 512
@@ -36,7 +40,42 @@ DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSI
 BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
 DWORD PrintProcessIntegrity(DWORD PID);
 DWORD ShowProcessPrivilages(DWORD PID);
-DWORD PrintFileIntegrity(LPSTR path);
+
+
+// МАПА ПИД -> ИМЯ для быстрого узнавания родителя
+std::map <DWORD, std::wstring> g_Processes;
+
+
+// Заполняет структуру с именами и ПИДами
+VOID InitializeProcesses()
+{
+  HANDLE hProcessSnap;
+  PROCESSENTRY32 pe32;
+
+  pe32.dwSize = sizeof(PROCESSENTRY32);
+  hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+  if (!Process32First(hProcessSnap, &pe32))
+  {
+    PRINT_STR_CONSOLE("Error: Process32First");
+    CloseHandle(hProcessSnap);
+    return;
+  }
+
+  do
+  {
+    g_Processes.insert(std::pair<DWORD, std::wstring>(pe32.th32ProcessID, std::wstring(pe32.szExeFile)));
+  }while (Process32Next(hProcessSnap, &pe32));
+
+  CloseHandle(hProcessSnap);
+}
+
+
+// Тупо вывод бати
+VOID PrintParentProcName(DWORD ParentPID)
+{
+  std::wcout << g_Processes[ParentPID];
+}
 
 
 INT Is_64(DWORD PID)
@@ -80,6 +119,8 @@ BOOL GetProcessList()
   DWORD dwPathLen;
   DWORD dwCopiedBufLen;
   WCHAR wstrExePath[MAX_PATH];
+
+  InitializeProcesses();
 
   pe32.dwSize = sizeof(PROCESSENTRY32);
 
@@ -133,28 +174,8 @@ BOOL GetProcessList()
     ////PID РОДИТЕЛЯ
     //wprintf(L" %d", pe32.th32ParentProcessID);
 
-    ////ИМЯ РОДИТЕЛЯ
-    //hParentProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe32.th32ParentProcessID);
-    //if (hParentProcess == INVALID_HANDLE_VALUE)
-    //{
-    //  wprintf(L" N/a\n");
-    //}
-    //else
-    //{
-    //  HMODULE hMod;
-    //  DWORD dwLen;
-    //  DWORD dwRes;
-    //  CHAR szProcessName[MAX_PATH];
-    //  dwRes = GetProcessImageFileNameA(hParentProcess, szProcessName, MAX_PATH);
-    //  if (dwRes > 0)
-    //  {
-    //    printf(" %s \n",szProcessName);
-    //  }
-    //  else
-    //  {
-    //    printf(" N/a\n");
-    //  }
-    //}
+    //ИМЯ РОДИТЕЛЯ
+    PrintParentProcName(pe32.th32ParentProcessID);
 
     //// МОДУЛИ
     //ListProcessModules(pe32.th32ProcessID);
@@ -213,7 +234,7 @@ BOOL GetProcessList()
 
     //// УРОВЕНЬ ЦЕЛОСТНОСТИ
     // printf("%lu\n", PrintProcessIntegrity(pe32.th32ProcessID));
-    ShowProcessPrivilages(pe32.th32ProcessID);
+    //ShowProcessPrivilages(pe32.th32ProcessID);
 
     //PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
 
@@ -948,9 +969,10 @@ DWORD SetFileIntegrity(LPWSTR path, LPSTR strIntegrity)
 int main()
 {
   setlocale(LC_ALL, "Rus");
-  PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
-  SetFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt", (LPSTR)"Low");
-  PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
+  GetProcessList();
+  //PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
+  //SetFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt", (LPSTR)"Low");
+  //PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
 
 }
 
