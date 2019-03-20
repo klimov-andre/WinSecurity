@@ -2,6 +2,7 @@
 #pragma comment(lib, "netapi32.lib")
 #pragma comment(lib, "advapi32.lib")
 
+
 #include <windows.h>
 #include <tlhelp32.h>
 #include <tchar.h>
@@ -11,9 +12,14 @@
 #include <winbase.h>
 #include <aclapi.h>
 
+
 #define CONSOLE
 #define PROCESS_CNT 512
 #define BUF_LEN 512
+#define LOW_INTEGRITY_SD_W L"S:(ML;;NW;;;LW)"
+#define MEDIUM_INTEGRITY_SD_W L"S:(ML;;NW;;;ME)"
+#define HIGH_INTEGRITY_SD_W L"S:(ML;;NW;;;HI)"
+
 
 #ifdef CONSOLE
   #define PRINT_STR_CONSOLE(x) printf(x" line: %d, err: %lu\n", __LINE__, GetLastError())
@@ -905,12 +911,46 @@ DWORD PrintFileIntegrity(LPWSTR path)
 }
 
 
+DWORD SetFileIntegrity(LPWSTR path, LPSTR strIntegrity)
+{
+  PSECURITY_DESCRIPTOR pSD;
+  LPCWSTR wstrNewSD;
+  PACL pSAcl;
+  BOOL fSaclPresent = FALSE;
+  BOOL fSaclDefaulted = FALSE;
+  DWORD res = 0;
+
+  if (0 == strcmp(strIntegrity, "Low"))
+  {
+    wstrNewSD = LOW_INTEGRITY_SD_W;
+  }
+  else if (0 == strcmp(strIntegrity, "Medium"))
+  {
+    wstrNewSD = MEDIUM_INTEGRITY_SD_W;
+  }
+  else if (0 == strcmp(strIntegrity, "High"))
+  {
+    wstrNewSD = HIGH_INTEGRITY_SD_W;
+  }
+  
+  if (ConvertStringSecurityDescriptorToSecurityDescriptorW(wstrNewSD, SDDL_REVISION_1, &pSD, NULL))
+  {
+    if (GetSecurityDescriptorSacl(pSD, &fSaclPresent, &pSAcl, &fSaclDefaulted))
+    {
+      res = SetNamedSecurityInfoW(path, SE_FILE_OBJECT, LABEL_SECURITY_INFORMATION, NULL, NULL, NULL, pSAcl);
+    }
+    LocalFree(pSD);
+  }
+  return res;
+}
+
+
 int main()
 {
   setlocale(LC_ALL, "Rus");
-  //GetProcessList();
-  
-  int a = PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
+  PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
+  SetFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt", (LPSTR)"Low");
+  PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
 
 }
 
