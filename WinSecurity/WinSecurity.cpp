@@ -30,6 +30,8 @@ DWORD GetOwnerNamenSID(DWORD PID, LPWSTR wstrName, DWORD dwNameLen, LPSTR* strSI
 BOOL SetPrivilege(HANDLE hToken, LPCTSTR lpszPrivilege, BOOL bEnablePrivilege);
 DWORD PrintProcessIntegrity(DWORD PID);
 DWORD ShowProcessPrivilages(DWORD PID);
+DWORD PrintFileIntegrity(LPSTR path);
+
 
 INT Is_64(DWORD PID)
 {
@@ -207,7 +209,10 @@ BOOL GetProcessList()
     // printf("%lu\n", PrintProcessIntegrity(pe32.th32ProcessID));
     ShowProcessPrivilages(pe32.th32ProcessID);
 
+    //PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
+
     CloseHandle(hProcess);
+
 
   } while (Process32Next(hProcessSnap, &pe32));
 
@@ -832,17 +837,80 @@ DWORD ShowProcessPrivilages(DWORD PID)
 }
 
 
+// Вывод интегрити левел объекта
+DWORD PrintFileIntegrity(LPWSTR path)
+{
+  HANDLE hProcess;
+  HANDLE hToken;
+  LUID l = { 0 };
+  TOKEN_PRIVILEGES privilege;
+  PSECURITY_DESCRIPTOR pSD;
+  PACL pACL;
+  LPVOID pAce;
+  DWORD integrity;
+  PSID pSIDtmp;
+  LPWSTR strSD;
+  ULONG ulSDlen;
+
+  hProcess = GetCurrentProcess();
+  
+  if (!OpenProcessToken(hProcess, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
+  {
+    return GetLastError();
+  }
+  if (!LookupPrivilegeValue(NULL, L"SeSecurityPrivilege", &l))
+  {
+    return GetLastError();
+  }
+
+  privilege.Privileges[0].Luid = l;
+  privilege.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+  privilege.PrivilegeCount = 1;
+
+  if (!AdjustTokenPrivileges(hToken, FALSE, &privilege, sizeof(TOKEN_PRIVILEGES), NULL, NULL))
+  {
+    return GetLastError();
+  }
+
+  if (ERROR_SUCCESS != GetNamedSecurityInfo(path, SE_FILE_OBJECT, LABEL_SECURITY_INFORMATION, NULL, NULL, NULL, &pACL, &pSD))
+  {
+    return GetLastError();
+  }
+  if (!pACL)
+  {
+    printf("Medium integrity");
+    return 0;
+  }
+  if (!GetAce(pACL, 0, (LPVOID*)&pAce))
+  {
+    return GetLastError();
+  }
+  else
+  {
+    pSIDtmp = (PSID)(&((ACCESS_ALLOWED_ACE*)pAce)->SidStart);
+    switch (integrity = ((SID*)pSIDtmp)->SubAuthority[0])
+    {
+    case 0x1000:
+      printf("Low integrity");
+      break;
+    case 0x2000:
+      printf("Medium integrity");
+      break;
+    case 0x3000:
+      printf("High integrity");
+      break;
+    }
+  }
+  return 0;
+}
+
+
 int main()
 {
   setlocale(LC_ALL, "Rus");
-  GetProcessList();
-  int aa = SetProcessIntegrity(2208,(LPSTR)"Low");
-  GetProcessList();
+  //GetProcessList();
+  
+  int a = PrintFileIntegrity((LPWSTR)L"C:\\Virtual\\ddd.txt");
 
-  // Запретили Userok DELETить
-  //DWORD dwRes = SetPermission((LPWSTR)L"C:\\Virtual\\ddd.txt", (LPWSTR)L"Yura", (LPWSTR)L"GENERIC_EXECUTE", FALSE);
-  //
-  //printf("%lu\n", dwRes);
-  //PrintACLs((LPSTR)"C:\\Virtual\\ddd.txt");
 }
 
